@@ -1,0 +1,11 @@
+const router = require("express").Router();
+const c = require("../controllers/bookingController");
+const { protect } = require("../middleware/auth");
+router.use(protect);
+router.post("/", c.create);
+router.get("/my", c.mine);
+router.get("/:id", c.one);
+router.patch("/:id/cancel", c.cancel);
+router.post("/verify-entry", c.verify);
+router.post('/verify-gate-entry', c.verifyGateEntry);
+module.exports = router;

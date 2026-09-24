@@ -1,0 +1,8 @@
+const router = require("express").Router();
+const c = require("../controllers/violationController");
+const { protect, authorize } = require("../middleware/auth");
+router.use(protect);
+router.get("/", c.list);
+router.post("/", c.create);
+router.patch("/:id", authorize("admin"), c.update);
+module.exports = router;
