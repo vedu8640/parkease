@@ -7,7 +7,8 @@ const { start } = require("./utils/noShowJob");
 const app = express();
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173",
+       "https://parkease-fsmg8f3ti-vedikapanday7-8699s-projects.vercel.app",],
     credentials: true,
   }),
 );
