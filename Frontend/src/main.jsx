@@ -41,6 +41,8 @@ import {
   BookingDetails,
   HistoryPage,
   ProfilePage,
+  ChangePasswordPage,
+  ForgotPasswordPage,
   NotificationsPage,
   ParkingStatus,
 } from "./pages/UserPages";
@@ -63,7 +65,6 @@ import {
   SlotsPage,
   UserDetails,
   UsersPage,
-  ViolationsPage,
   
 } from "./pages/AdminPages";
 
@@ -988,11 +989,6 @@ function App() {
         <ReportsPage />
       </Protected>
     ),
-    "/admin/violations": (
-      <Protected admin>
-        <ViolationsPage />
-      </Protected>
-    ),
     "/admin/events": (
       <Protected admin>
         <EventsPage />
@@ -1069,6 +1065,12 @@ function App() {
         <ProfilePage />
       </Protected>
     ),
+    "/change-password": (
+      <Protected>
+        <ChangePasswordPage />
+      </Protected>
+    ),
+    "/forgot-password": <ForgotPasswordPage />,
     "/notifications": (
       <Protected>
         <NotificationsPage />

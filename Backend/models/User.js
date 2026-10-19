@@ -18,6 +18,8 @@ const schema = new mongoose.Schema(
     collegeId: { type: String, trim: true },
     facultyId: { type: String, trim: true },
     mobile: { type: String, trim: true },
+    passwordResetToken: { type: String, default: null },
+    passwordResetExpiresAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },

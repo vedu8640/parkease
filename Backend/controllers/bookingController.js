@@ -92,6 +92,14 @@ async function create(req, res, next) {
       Booking.findById(booking._id),
     );
 
+    await notify(
+      req.user._id,
+      "Booking Confirmed",
+      `Your parking slot ${slot.slotNumber} is confirmed for ${start.toLocaleString("en-IN")} to ${end.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}.`,
+      "booking",
+      `/booking/${booking._id}`,
+    );
+
     res.status(201).json({
       success: true,
       booking: out,

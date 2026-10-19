@@ -91,6 +91,8 @@ async function extend(req, res, next) {
         });
     b.endTime = end;
     b.extensionCount++;
+    b.endReminderSentAt = null;
+    b.endOverdueReminderSentAt = null;
     await b.save();
     await notify(
       req.user._id,

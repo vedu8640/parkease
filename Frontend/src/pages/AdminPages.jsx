@@ -13,16 +13,9 @@ import {
   OctagonXIcon,
   Plus,
   Search,
-  ShieldAlert,
   Users,
   QrCode,
 } from "lucide-react";
-import {
-  getBookings,
-  useBookings,
-  cancelBooking,
-} from "../services/bookingService";
-import { makeSlots } from "../services/parkingService";
 import { useAuthenticatedUser, logoutMockUser } from "../services/authService";
 import { request } from "../services/api";
 
@@ -32,7 +25,6 @@ const links = [
   ["Bookings", "/admin/bookings", CalendarDays],
   ["Users", "/admin/users", Users],
   ["Reports", "/admin/reports", FileBarChart],
-  ["Violations", "/admin/violations", ShieldAlert],
   ["Events & Guests", "/admin/events", CalendarDays],
   ["Gate QR", "/admin/gate-qr", QrCode],
   ["Notifications", "/admin/notifications", Bell],
@@ -99,58 +91,45 @@ const Stat = ({ label, value, icon: Icon }) => (
   </motion.article>
 );
 export function AdminDashboard() {
-  const bookings = useBookings();
-  const slots = [...makeSlots("Car"), ...makeSlots("Bike")];
+  const [data, setData] = useState({ stats: {}, slots: [], bookings: [] });
+  useEffect(() => {
+    let active = true;
+    const load = () => Promise.all([request("/admin/dashboard"), request("/slots"), request("/admin/bookings")])
+      .then(([dashboard, slots, bookings]) => active && setData({ stats: dashboard.stats || {}, slots: slots.slots || [], bookings: bookings.bookings || [] }))
+      .catch((error) => console.error("Admin dashboard error:", error));
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  const { stats, slots, bookings } = data;
   return (
     <AdminLayout title="Good morning, Admin">
       <div className="admin-stats">
-        <Stat label="Total Parking Slots" value={slots.length} icon={MapPin} />
-        <Stat label="Available Slots" value="72" icon={Car} />
-        <Stat label="Currently Booked" value="18" icon={CalendarDays} />
-        <Stat
-          label="Active Parking"
-          value={bookings.filter((b) => b.status === "Active").length}
-          icon={Car}
-        />
-        <Stat
-          label="Today's Bookings"
-          value={bookings.length}
-          icon={CalendarDays}
-        />
-        <Stat
-          label="No-show / Expired"
-          value={
-            bookings.filter((b) => ["No-show", "Expired"].includes(b.status))
-              .length
-          }
-          icon={CircleAlert}
-        />
+        <Stat label="Total Parking Slots" value={stats.totalSlots ?? "—"} icon={MapPin} />
+        <Stat label="Available Slots" value={stats.availableSlots ?? "—"} icon={Car} />
+        <Stat label="Currently Booked" value={stats.bookedSlots ?? "—"} icon={CalendarDays} />
+        <Stat label="Active Parking" value={stats.occupiedSlots ?? "—"} icon={Car} />
+        <Stat label="Today's Bookings" value={stats.todayBookings ?? "—"} icon={CalendarDays} />
+        <Stat label="No-show / Expired" value={stats.noShowExpired ?? "—"} icon={CircleAlert} />
       </div>
       <section className="admin-card">
         <h2>Parking Overview</h2>
-        <SlotOverview type="Car" />
-        <SlotOverview type="Bike" />
+        <SlotOverview type="car" slots={slots} />
+        <SlotOverview type="bike" slots={slots} />
         <p>
           Slot status is based on booking records and administrator updates.
         </p>
       </section>
       <section className="admin-card">
         <h2>Recent Activity</h2>
-        {[
-          "New booking PK-2026-00124",
-          "Booking PK-2026-00120 completed",
-          "Wrong parking report received for C12",
-          "Guest parking enabled for Tech Fest",
-        ].map((x, i) => (
-          <p className="activity" key={x}>
-            <small>{["10:32 AM", "10:18 AM", "09:52 AM", "09:30 AM"][i]}</small>
-            {x}
+        {bookings.slice(0, 5).map((booking) => (
+          <p className="activity" key={booking._id}>
+            <small>{new Date(booking.createdAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</small>
+            Booking {booking.bookingId} · {booking.status}
           </p>
         ))}
       </section>
       <div className="admin-quick">
         {[
-          ["Add Parking Slot", "/admin/slots"],
           ["View Bookings", "/admin/bookings"],
           ["Manage Users", "/admin/users"],
           ["View Reports", "/admin/reports"],
@@ -164,26 +143,18 @@ export function AdminDashboard() {
     </AdminLayout>
   );
 }
-function SlotOverview({ type }) {
-  const slots = makeSlots(type).slice(0, type === "Car" ? 30 : 60);
+function SlotOverview({ type, slots }) {
+  const shownSlots = slots.filter((slot) => slot.vehicleType === type);
   return (
     <div className="admin-slot-overview">
       <b>{type.toUpperCase()} PARKING</b>
       <div>
-        {slots.map((slot, i) => (
+        {shownSlots.map((slot) => (
           <i
-            key={slot.id}
-            className={
-              slot.unavailable
-                ? "unavailable"
-                : i % 11 === 0
-                  ? "active"
-                  : i % 6 === 0
-                    ? "booked"
-                    : ""
-            }
+            key={slot._id}
+            className={slot.availabilityStatus === "disabled" ? "unavailable" : slot.availabilityStatus === "occupied" ? "active" : slot.availabilityStatus === "booked" ? "booked" : ""}
           >
-            {slot.id}
+            {slot.slotNumber}
           </i>
         ))}
       </div>
@@ -197,15 +168,22 @@ export function SlotsPage() {
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    request("/slots")
+    const load = () => request("/slots")
       .then((data) => active && setSlots(data.slots || []))
       .catch((requestError) => active && setError(requestError.message))
       .finally(() => active && setLoading(false));
-    return () => { active = false; };
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
   const shown = slots.filter((s) =>
     s.slotNumber.toLowerCase().includes(query.toLowerCase()),
   );
+  const setStatus = async (slot, status) => {
+    try {
+      const data = await request(`/slots/${slot._id}`, { method: "PUT", body: JSON.stringify({ status }) });
+      setSlots((current) => current.map((item) => item._id === slot._id ? { ...item, ...data.slot, availabilityStatus: status === "disabled" ? "disabled" : "available" } : item));
+    } catch (requestError) { setError(requestError.message); }
+  };
   return (
     <AdminLayout title="Manage Parking Slots">
       <div className="admin-toolbar">
@@ -219,14 +197,15 @@ export function SlotsPage() {
         </label>
         
       </div>
-      <section className="admin-card admin-table">
+      <section className="admin-card admin-table admin-slot-table">
         {loading ? <p>Loading parking slots...</p> : error ? <p>{error}</p> : shown.map((s) => (
           <article key={s._id}>
             <b>{s.slotNumber}</b>
             <span>{s.vehicleType}</span>
-            <span>{s.zone}</span>
-            <Status value={s.status === "disabled" ? "Unavailable" : "Available"} />
-            <Link to={`/admin/parking-slots/edit/${s._id}`}>Edit</Link>
+            <div className="slot-status-actions">
+              <button className={s.status === "available" ? "selected" : ""} onClick={() => setStatus(s, "available")}>Available</button>
+              <button className={s.status === "disabled" ? "selected" : ""} onClick={() => setStatus(s, "disabled")}>Unavailable</button>
+            </div>
           </article>
         ))}
       </section>
@@ -314,29 +293,32 @@ export function EditSlotPage() {
   );
 }
 export function BookingsPage() {
-  const bookings = useBookings();
+  const [bookings, setBookings] = useState([]);
+  useEffect(() => {
+    let active = true;
+    const load = () => request("/admin/bookings").then((data) => active && setBookings(data.bookings || [])).catch((error) => console.error("Admin bookings error:", error));
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   return (
     <AdminLayout title="Manage Bookings">
       <AdminSearch placeholder="Booking ID, user or slot" />
       <section className="admin-card admin-table">
         {bookings.map((b) => (
-          <article key={b.id}>
-            <b>{b.id}</b>
-            <span>Vedika Pandey</span>
+          <article key={b._id}>
+            <b>{b.bookingId}</b>
+            <span>{b.user?.name || "—"}</span>
             <span>
-              {b.vehicle} · {b.slot}
+              {b.vehicleType} · {b.slot?.slotNumber || "—"}
             </span>
             <span>
-              {b.date}
+              {new Date(b.startTime).toLocaleDateString("en-IN")}
               <small>
-                {b.start} – {b.end}
+                {new Date(b.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} – {new Date(b.endTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
               </small>
             </span>
             <Status value={b.status} />
-            <Link to={`/admin/bookings/${b.id}`}>View</Link>
-            {["Booked", "Grace Period"].includes(b.status) && (
-              <button onClick={() => cancelBooking(b.id)}>Cancel</button>
-            )}
+            <Link to={`/admin/bookings/${b._id}`}>View</Link>
           </article>
         ))}
       </section>
@@ -344,25 +326,27 @@ export function BookingsPage() {
   );
 }
 export function AdminBookingDetails() {
-  const b = getBookings().find((x) => x.id === useParams().id);
+  const { id } = useParams();
+  const [b, setBooking] = useState(null);
+  useEffect(() => { request("/admin/bookings").then((data) => setBooking((data.bookings || []).find((booking) => booking._id === id) || null)).catch((error) => console.error("Booking details error:", error)); }, [id]);
   return (
     <AdminLayout title="Booking Details">
       {b ? (
         <section className="admin-card details-grid">
           {Object.entries({
-            "Booking ID": b.id,
-            User: "Vedika Pandey",
-            Role: "Student",
-            "College ID": "0808CI241292",
-            Email: "student@example.edu",
-            Vehicle: b.number,
-            Type: b.vehicle,
-            Slot: b.slot,
-            Zone: b.zone,
-            Date: b.date,
-            Time: `${b.start} – ${b.end}`,
+            "Booking ID": b.bookingId,
+            User: b.user?.name || "—",
+            Role: b.user?.role || "—",
+            "College ID": b.user?.collegeId || b.user?.facultyId || "—",
+            Email: b.user?.email || "—",
+            Vehicle: b.vehicleNumber,
+            Type: b.vehicleType,
+            Slot: b.slot?.slotNumber || "—",
+            Zone: b.slot?.zone || "—",
+            Date: new Date(b.startTime).toLocaleDateString("en-IN"),
+            Time: `${new Date(b.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} – ${new Date(b.endTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`,
             Status: b.status,
-            Created: b.created,
+            Created: new Date(b.createdAt).toLocaleString("en-IN"),
           }).map(([k, v]) => (
             <div key={k}>
               <small>{k}</small>
@@ -376,39 +360,26 @@ export function AdminBookingDetails() {
     </AdminLayout>
   );
 }
-const users = [
-  {
-    id: "u1",
-    name: "Vedika Pandey",
-    role: "Student",
-    collegeId: "0808CI241292",
-    email: "student@example.edu",
-    mobile: "+91 98765 43210",
-    status: "Active",
-  },
-  {
-    id: "u2",
-    name: "Aarav Sharma",
-    role: "Faculty",
-    collegeId: "FAC-208",
-    email: "aarav@college.edu",
-    mobile: "+91 98765 0011",
-    status: "Active",
-  },
-];
 export function UsersPage() {
+  const [users, setUsers] = useState([]);
+  useEffect(() => {
+    let active = true;
+    const load = () => request("/admin/users").then((data) => active && setUsers(data.users || [])).catch((error) => console.error("Admin users error:", error));
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   return (
     <AdminLayout title="Users">
       <AdminSearch placeholder="Name, college ID or email" />
       <section className="admin-card admin-table">
         {users.map((u) => (
-          <article key={u.id}>
+          <article key={u._id}>
             <b>{u.name}</b>
             <span>{u.role}</span>
-            <span>{u.collegeId}</span>
+            <span>{u.collegeId || u.facultyId || "—"}</span>
             <span>{u.email}</span>
-            <Status value={u.status} />
-            <Link to={`/admin/users/${u.id}`}>View</Link>
+            <Status value={u.isActive ? "Active" : "Inactive"} />
+            <Link to={`/admin/users/${u._id}`}>View</Link>
           </article>
         ))}
       </section>
@@ -416,38 +387,51 @@ export function UsersPage() {
   );
 }
 export function UserDetails() {
-  const u = users.find((x) => x.id === useParams().id) || users[0];
+  const { id } = useParams();
+  const [u, setUser] = useState(null);
+  useEffect(() => { request("/admin/users").then((data) => setUser((data.users || []).find((user) => user._id === id) || null)).catch((error) => console.error("User details error:", error)); }, [id]);
   return (
     <AdminLayout title="User Details">
-      <section className="admin-card details-grid">
+      {u ? <section className="admin-card details-grid">
         {Object.entries({
           ...u,
-          "Vehicle Number": "MP09XX0000",
-          "Total Bookings": 4,
-          "Completed Bookings": 1,
-          "Cancelled Bookings": 1,
-          "No-show Count": 0,
         }).map(([k, v]) => (
           <div key={k}>
             <small>{k}</small>
             <b>{v}</b>
           </div>
         ))}
-      </section>
+      </section> : <p>Loading user...</p>}
     </AdminLayout>
   );
 }
 export function ReportsPage() {
+  const [bookings, setBookings] = useState([]);
+  useEffect(() => {
+    let active = true;
+    const load = () => request("/admin/bookings").then((data) => active && setBookings(data.bookings || [])).catch((error) => console.error("Reports error:", error));
+    load(); const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  const now = new Date();
+  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+  const count = (predicate) => bookings.filter(predicate).length;
+  const chart = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(now); day.setDate(now.getDate() - (6 - index)); day.setHours(0, 0, 0, 0);
+    const next = new Date(day); next.setDate(day.getDate() + 1);
+    return count((booking) => new Date(booking.createdAt) >= day && new Date(booking.createdAt) < next);
+  });
+  const max = Math.max(...chart, 1);
   return (
     <AdminLayout title="Parking Reports">
       <div className="admin-stats">
         {[
-          ["Today’s Bookings", "24"],
-          ["Weekly Bookings", "98"],
-          ["Completed Bookings", "61"],
-          ["Cancelled Bookings", "9"],
-          ["No-show Bookings", "3"],
-          ["Expired Bookings", "2"],
+          ["Today’s Bookings", count((booking) => new Date(booking.createdAt) >= startOfToday)],
+          ["Weekly Bookings", bookings.length],
+          ["Completed Bookings", count((booking) => booking.status === "completed")],
+          ["Cancelled Bookings", count((booking) => booking.status === "cancelled")],
+          ["No-show Bookings", count((booking) => booking.status === "no_show")],
+          ["Expired Bookings", count((booking) => booking.status === "expired")],
         ].map(([x, n]) => (
           <Stat key={x} label={x} value={n} icon={FileBarChart} />
         ))}
@@ -455,59 +439,10 @@ export function ReportsPage() {
       <section className="admin-card">
         <h2>Bookings by Day</h2>
         <div className="simple-chart">
-          {[45, 68, 52, 80, 61, 74, 58].map((x, i) => (
-            <i style={{ height: `${x}%` }} key={i} />
+          {chart.map((value, i) => (
+            <i style={{ height: `${Math.max(8, (value / max) * 100)}%` }} key={i} title={`${value} bookings`} />
           ))}
         </div>
-      </section>
-    </AdminLayout>
-  );
-}
-export function ViolationsPage() {
-  const [reports, setReports] = useState([
-    {
-      id: "R-001",
-      slot: "C12",
-      type: "Wrong Parking",
-      description: "Vehicle is blocking the marked bay.",
-      by: "Vedika Pandey",
-      status: "Pending",
-    },
-  ]);
-  return (
-    <AdminLayout title="Parking Issues & Reports">
-      <section className="admin-card admin-table">
-        {reports.map((r) => (
-          <article key={r.id}>
-            <b>{r.id}</b>
-            <span>{r.slot}</span>
-            <span>{r.type}</span>
-            <span>{r.description}</span>
-            <Status value={r.status} />
-            <button
-              onClick={() =>
-                setReports(
-                  reports.map((x) =>
-                    x.id === r.id ? { ...x, status: "Under Review" } : x,
-                  ),
-                )
-              }
-            >
-              Review
-            </button>
-            <button
-              onClick={() =>
-                setReports(
-                  reports.map((x) =>
-                    x.id === r.id ? { ...x, status: "Resolved" } : x,
-                  ),
-                )
-              }
-            >
-              Resolve
-            </button>
-          </article>
-        ))}
       </section>
     </AdminLayout>
   );
@@ -515,6 +450,24 @@ export function ViolationsPage() {
 export function EventsPage() {
   const [events, setEvents] = useState([]);
   const [name, setName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [error, setError] = useState("");
+  const loadEvents = () => request("/events").then((data) => setEvents(data.events || [])).catch((requestError) => setError(requestError.message));
+  useEffect(() => { loadEvents(); const timer = window.setInterval(loadEvents, 15000); return () => window.clearInterval(timer); }, []);
+  const createEvent = async () => {
+    if (!name || !startDate || !endDate) return setError("Name, start date and end date are required.");
+    try {
+      await request("/events", { method: "POST", body: JSON.stringify({ name, startDate, endDate }) });
+      setName(""); setStartDate(""); setEndDate(""); setError(""); loadEvents();
+    } catch (requestError) { setError(requestError.message); }
+  };
+  const toggleEvent = async (event) => {
+    try {
+      await request(`/events/${event._id}`, { method: "PATCH", body: JSON.stringify({ status: event.status === "active" ? "completed" : "active", guestParkingEnabled: event.status !== "active" }) });
+      loadEvents();
+    } catch (requestError) { setError(requestError.message); }
+  };
   return (
     <AdminLayout title="Events & Guest Parking">
       <div className="admin-toolbar">
@@ -523,41 +476,23 @@ export function EventsPage() {
           onChange={(e) => setName(e.target.value)}
           placeholder="College event name"
         />
-        <button
-          onClick={() => {
-            if (name) {
-              setEvents([...events, { name, status: "Active" }]);
-              setName("");
-            }
-          }}
-        >
+        <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button onClick={createEvent}>
           <Plus />
           Create Event
         </button>
       </div>
+      {error && <p className="error">{error}</p>}
       <section className="admin-card">
         {events.length ? (
           events.map((e) => (
-            <article className="event-row" key={e.name}>
+            <article className="event-row" key={e._id}>
               <b>{e.name}</b>
-              <span>20 Aug 2026 · 10:00 AM – 5:00 PM</span>
+              <span>{new Date(e.startDate).toLocaleString("en-IN")} – {new Date(e.endDate).toLocaleString("en-IN")}</span>
               <Status value={e.status} />
-              <button
-                onClick={() =>
-                  setEvents(
-                    events.map((x) =>
-                      x.name === e.name
-                        ? {
-                            ...x,
-                            status:
-                              x.status === "Active" ? "Inactive" : "Active",
-                          }
-                        : x,
-                    ),
-                  )
-                }
-              >
-                {e.status === "Active" ? "Deactivate" : "Activate"}
+              <button onClick={() => toggleEvent(e)}>
+                {e.status === "active" ? "Deactivate" : "Activate"}
               </button>
             </article>
           ))
@@ -588,6 +523,8 @@ export function AdminNotifications() {
 
   useEffect(() => {
     loadNotifications();
+    const timer = window.setInterval(loadNotifications, 15000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const markAsRead = async (id) => {

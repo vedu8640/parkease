@@ -16,6 +16,7 @@ import {
 import { registeredVehicles } from "../data/mockData";
 import { getSlotStatus, makeSlots } from "../services/parkingService";
 import { getMockBooking, saveMockBooking } from "../services/bookingService";
+import { request } from "../services/api";
 
 const times = [
   "00:00",
@@ -220,16 +221,25 @@ export function ParkingPage({ initialType }) {
   const [end, setEnd] = useState("15:00");
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState("");
+  const [liveSlots, setLiveSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(true);
 
   const validTime = start < end;
 
-  const slots = useMemo(
-    () =>
-      makeSlots(type).filter(
-        (slot) => zone === "All Zones" || slot.zone === zone
-      ),
-    [type, zone]
-  );
+  useEffect(() => {
+    let active = true;
+    const startTime = new Date(`${date}T${start}:00`).toISOString();
+    const endTime = new Date(`${date}T${end}:00`).toISOString();
+    setLoadingSlots(true);
+    request(`/slots?vehicleType=${type.toLowerCase()}&startTime=${encodeURIComponent(startTime)}&endTime=${encodeURIComponent(endTime)}`)
+      .then((data) => active && setLiveSlots(data.slots || []))
+      .catch((error) => active && setNotice(error.message))
+      .finally(() => active && setLoadingSlots(false));
+    return () => { active = false; };
+  }, [type, date, start, end]);
+  const slots = useMemo(() => liveSlots
+    .filter((slot) => zone === "All Zones" || slot.zone === zone)
+    .map((slot) => ({ ...slot, id: slot.slotNumber, number: slot.slotNumber, type: slot.vehicleType === "car" ? "Car" : "Bike", unavailable: slot.availabilityStatus === "disabled" })), [liveSlots, zone]);
 
   const vehicle = registeredVehicles.find((v) => v.type === type);
 
@@ -276,7 +286,7 @@ export function ParkingPage({ initialType }) {
       date,
       start,
       end,
-      bookingId: "PK-2026-00451",
+      slotId: selected._id,
     };
 
     sessionStorage.setItem(
@@ -406,13 +416,8 @@ export function ParkingPage({ initialType }) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              {slots.map((slot) => {
-                const status = getSlotStatus(
-                  slot,
-                  date,
-                  start,
-                  end
-                );
+              {loadingSlots ? <p>Loading available slots...</p> : slots.map((slot) => {
+                const status = slot.availabilityStatus === "disabled" ? "unavailable" : (slot.availabilityStatus || "available");
 
                 return (
                   <SlotCard
@@ -478,6 +483,8 @@ export function ParkingPage({ initialType }) {
 
 export function BookingPage() {
   const navigate = useNavigate();
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [draft] = useState(() => {
     try {
@@ -500,9 +507,27 @@ export function BookingPage() {
     );
   }
 
-  function confirm() {
-    saveMockBooking(draft);
-    navigate("/booking/confirmation");
+  async function confirm() {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await request("/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          slotId: draft.slotId,
+          vehicleType: draft.vehicleType.toLowerCase(),
+          vehicleNumber: draft.vehicle.number,
+          startTime: new Date(`${draft.date}T${draft.start}:00`).toISOString(),
+          endTime: new Date(`${draft.date}T${draft.end}:00`).toISOString(),
+        }),
+      });
+      sessionStorage.setItem("parkease-confirmed-booking", JSON.stringify(response.booking));
+      navigate("/booking/confirmation");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -568,8 +593,9 @@ export function BookingPage() {
 
             <em>Ready to Book</em>
 
-            <button onClick={confirm}>
-              Confirm Booking <ArrowRight size={17} />
+            {error && <p className="parking-error">{error}</p>}
+            <button onClick={confirm} disabled={saving}>
+              {saving ? "Confirming..." : "Confirm Booking"} <ArrowRight size={17} />
             </button>
           </aside>
         </div>
@@ -579,7 +605,23 @@ export function BookingPage() {
 }
 
 export function ConfirmationPage() {
-  const booking = getMockBooking();
+  const booking = useMemo(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("parkease-confirmed-booking"));
+      if (!saved) return null;
+      return {
+        bookingId: saved.bookingId,
+        slot: { id: saved.slot?.slotNumber, zone: saved.slot?.zone },
+        vehicleType: saved.vehicleType === "car" ? "Car" : "Bike",
+        vehicle: { number: saved.vehicleNumber },
+        date: new Date(saved.startTime).toISOString().slice(0, 10),
+        start: new Date(saved.startTime).toTimeString().slice(0, 5),
+        end: new Date(saved.endTime).toTimeString().slice(0, 5),
+      };
+    } catch {
+      return getMockBooking();
+    }
+  }, []);
 
   return (
     <ParkingShell>

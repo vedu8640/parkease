@@ -6,6 +6,7 @@ const Violation = require("../models/Violation");
 async function dashboard(req, res, next) {
   try {
     const total = await ParkingSlot.countDocuments();
+    const enabledSlots = await ParkingSlot.countDocuments({ status: "available" });
 
     const active = await Booking.countDocuments({
       status: "active",
@@ -38,7 +39,7 @@ async function dashboard(req, res, next) {
         totalSlots: total,
 
         // Active + currently booked slots are not available
-        availableSlots: Math.max(0, total - active - booked),
+        availableSlots: Math.max(0, enabledSlots - active - booked),
 
         bookedSlots: booked,
         occupiedSlots: active,

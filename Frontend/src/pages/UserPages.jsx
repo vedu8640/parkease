@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -29,6 +29,8 @@ import {
   handleNoShow,
   useBookings,
 } from "../services/bookingService";
+import { request } from "../services/api";
+import { useAuthenticatedUser } from "../services/authService";
 
 const icon = { Car, Bike };
 const nav = [
@@ -40,8 +42,36 @@ const nav = [
   ["Notifications", "/notifications", Bell],
 ];
 const statusClass = (s) => `status ${s.toLowerCase().replace(/\s/g, "-")}`;
+const displayStatus = (status) => ({ booked: "Booked", active: "Active", completed: "Completed", cancelled: "Cancelled", no_show: "No-show", expired: "Expired" }[status] || status);
+const asBooking = (booking) => ({
+  id: booking._id,
+  bookingId: booking.bookingId,
+  slot: booking.slot?.slotNumber || "—",
+  zone: booking.slot?.zone || "—",
+  vehicle: booking.vehicleType === "car" ? "Car" : "Bike",
+  number: booking.vehicleNumber,
+  date: new Date(booking.startTime).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+  start: new Date(booking.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }),
+  end: new Date(booking.endTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }),
+  status: displayStatus(booking.status),
+  rawStatus: booking.status,
+  created: new Date(booking.createdAt).toLocaleString("en-IN"),
+});
+const initials = (name = "User") => name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 export function UserLayout({ children, title, subtitle }) {
   const [open, setOpen] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const user = useAuthenticatedUser();
+  const name = user?.name || "User";
+  useEffect(() => {
+    let active = true;
+    const checkUnread = () => request("/notifications")
+      .then((data) => active && setHasUnreadNotifications((data.notifications || []).some((notification) => !notification.isRead)))
+      .catch(() => active && setHasUnreadNotifications(false));
+    checkUnread();
+    const timer = window.setInterval(checkUnread, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   return (
     <div className="user-app">
       <aside className={"user-sidebar " + (open ? "open" : "")}>
@@ -61,10 +91,10 @@ export function UserLayout({ children, title, subtitle }) {
         </nav>
         <div className="user-side-bottom">
           <div className="mini-user">
-            <b>VP</b>
+            <b>{initials(name)}</b>
             <span>
-              {currentUser.firstName}
-              <small>{currentUser.role}</small>
+              {name}
+              <small>{user?.role || "User"}</small>
             </span>
           </div>
           <Link to="/">
@@ -84,9 +114,9 @@ export function UserLayout({ children, title, subtitle }) {
           </div>
           <Link to="/notifications" className="bell">
             <Bell size={20} />
-            <i />
+            {hasUnreadNotifications && <i />}
           </Link>
-          <div className="top-avatar">VP</div>
+          <Link to="/profile" className="top-avatar">{initials(name)}</Link>
         </header>
         {children}
       </main>
@@ -125,24 +155,24 @@ function Action({ to, type, title, text }) {
     </Link>
   );
 }
-function SlotGrid({ compact = false }) {
-  const cars = ["C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08"],
-    bikes = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08"];
+function SlotGrid({ compact = false, slots = [] }) {
+  const cars = slots.filter((slot) => slot.vehicleType === "car").slice(0, 8),
+    bikes = slots.filter((slot) => slot.vehicleType === "bike").slice(0, 8);
   return (
     <div className="glance">
       {[
         ["CAR PARKING", cars],
         ["BIKE PARKING", bikes],
-      ].map(([name, slots]) => (
+      ].map(([name, typeSlots]) => (
         <div key={name}>
           <div className="glance-head">
             <b>{name}</b>
             <span>Booking-based availability</span>
           </div>
           <div className="mini-slots">
-            {slots.map((s, i) => (
-              <span className={i === 4 || i === 1 ? "taken" : ""} key={s}>
-                {s}
+            {typeSlots.map((s) => (
+              <span className={s.availabilityStatus === "available" && s.status !== "disabled" ? "" : "taken"} key={s._id}>
+                {s.slotNumber}
               </span>
             ))}
           </div>
@@ -190,15 +220,30 @@ function AvailabilityGrid({ type, date, time, selected, onSelect }) {
   );
 }
 export function Dashboard() {
-  const [qr, setQr] = useState(false);
-  const up = userBookings[0];
+  const user = useAuthenticatedUser();
+  const [data, setData] = useState({ bookings: [], slots: [], notifications: [] });
+  useEffect(() => {
+    let active = true;
+    Promise.all([request("/bookings/my"), request("/slots"), request("/notifications")])
+      .then(([bookings, slots, notifications]) => active && setData({ bookings: bookings.bookings || [], slots: slots.slots || [], notifications: notifications.notifications || [] }))
+      .catch((error) => console.error("Dashboard data error:", error));
+    return () => { active = false; };
+  }, []);
+  const bookings = data.bookings.map(asBooking);
+  const now = new Date();
+  const up = data.bookings
+    .filter((booking) => ["booked", "active"].includes(booking.status) && new Date(booking.endTime) > now)
+    .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
+    .map(asBooking)[0];
+  const activeBooking = data.bookings.filter((booking) => booking.status === "active").map(asBooking)[0];
+  const available = (type) => data.slots.filter((slot) => slot.vehicleType === type && slot.status === "available").length;
   return (
     <UserLayout
-      title={`Good morning, ${currentUser.firstName} 👋`}
+      title={`Good morning, ${(user?.name || "User").split(" ")[0]} 👋`}
       subtitle="Manage your campus parking easily with ParkEase."
     >
       <div className="user-content">
-        <div className="date-note">Sunday, 13 September 2026</div>
+        <div className="date-note">{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
         <motion.section
           className="stat-grid"
           initial="hidden"
@@ -209,10 +254,10 @@ export function Dashboard() {
           }}
         >
           {[
-            [Car, "24", "Available Car Slots"],
-            [Bike, "48", "Available Bike Slots"],
-            [CalendarDays, "Today", "Upcoming Booking"],
-            [Clock3, "—", "Active Parking"],
+            [Car, available("car"), "Available Car Slots"],
+            [Bike, available("bike"), "Available Bike Slots"],
+            [CalendarDays, up ? "1" : "0", "Upcoming Booking"],
+            [Clock3, activeBooking ? "1" : "—", "Active Parking"],
           ].map(([I, n, l]) => (
             <motion.article
               variants={{
@@ -234,8 +279,9 @@ export function Dashboard() {
                 <span>UPCOMING BOOKING</span>
                 <h2>Your next campus space</h2>
               </div>
-              <Status value="Booked" />
+              {up && <Status value={up.status} />}
             </div>
+            {up ? <>
             <div className="booking-highlight">
               <div className="booking-vehicle">
                 <Car />
@@ -245,7 +291,7 @@ export function Dashboard() {
                   {up.slot} · {up.zone}
                 </h3>
                 <p>
-                  {up.id} · {up.vehicle} · {up.number}
+                  {up.bookingId} · {up.vehicle} · {up.number}
                 </p>
                 <div className="booking-meta">
                   <span>
@@ -260,11 +306,11 @@ export function Dashboard() {
             <div className="booking-buttons">
   <Link to={`/booking/${up.id}`}>View Booking</Link>
   <Link to="/entry-verification">Scan Entry QR</Link>
-</div>
+            </div></> : <Empty text="No upcoming booking." />}
           </section>
           <section className="active-panel">
             <Clock3 />
-            <h2>No Active Parking</h2>
+            <h2>{activeBooking ? `Active: ${activeBooking.slot}` : "No Active Parking"}</h2>
             <p>
               Once you start parking, your active parking session will appear
               here.
@@ -314,14 +360,14 @@ export function Dashboard() {
               <h2>Recent Bookings</h2>
               <Link to="/my-bookings">View all</Link>
             </div>
-            <BookingTable bookings={userBookings.slice(0, 3)} />
+            <BookingTable bookings={bookings.slice(0, 3)} />
           </section>
           <section className="surface">
             <div className="section-title">
               <h2>Parking at a glance</h2>
               <Link to="/parking-status">View status</Link>
             </div>
-            <SlotGrid />
+          <SlotGrid slots={data.slots} />
           </section>
         </div>
         <section className="surface notifications-preview">
@@ -329,33 +375,11 @@ export function Dashboard() {
             <h2>Recent Notifications</h2>
             <Link to="/notifications">View All Notifications</Link>
           </div>
-          {mockNotifications.slice(0, 3).map((n) => (
-            <Notice key={n.id} n={n} />
+          {data.notifications.slice(0, 3).map((n) => (
+            <Notice key={n._id} n={{ ...n, id: n._id, unread: !n.isRead }} />
           ))}
         </section>
       </div>
-      <AnimatePresence>
-        {qr && (
-          <div className="modal-wrap">
-            <motion.div
-              className="mock-modal"
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94 }}
-            >
-              <button className="modal-close" onClick={() => setQr(false)}>
-                <X />
-              </button>
-              <ParkingCircle />
-              <h2>Entry QR is coming soon</h2>
-              <p>
-                QR entry will be available after confirmation in a future stage.
-              </p>
-              <button onClick={() => setQr(false)}>Got it</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </UserLayout>
   );
 }
@@ -373,7 +397,7 @@ export function BookingTable({ bookings, action = true }) {
       {bookings.map((b) => (
         <div className="table-row" key={b.id}>
           <span>
-            <b>{b.id.replace("2026-", "")}</b>
+            <b>{b.bookingId || b.id}</b>
           </span>
           <span>{b.slot}</span>
           <span>
@@ -394,15 +418,23 @@ export function BookingTable({ bookings, action = true }) {
   );
 }
 export function MyBookings() {
-  const items = useBookings();
+  const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("All");
+  const loadBookings = () => request("/bookings/my").then((data) => setItems((data.bookings || []).map(asBooking))).catch((error) => console.error("Bookings error:", error));
+  useEffect(() => { loadBookings(); }, []);
   const matching = items.filter(
     (b) =>
       filter === "All" ||
       (filter === "Upcoming"
-        ? ["Booked", "Grace Period"].includes(b.status)
+        ? ["Booked", "Active"].includes(b.status)
         : b.status === filter),
   );
+  const cancel = async (id) => {
+    try {
+      await request(`/bookings/${id}/cancel`, { method: "PATCH" });
+      loadBookings();
+    } catch (error) { window.alert(error.message); }
+  };
   return (
     <UserLayout
       title="My Bookings"
@@ -436,7 +468,7 @@ export function MyBookings() {
                       <Icon type={b.vehicle} />
                     </span>
                     <div>
-                      <b>{b.id}</b>
+                      <b>{b.bookingId}</b>
                       <p>
                         {b.vehicle} · {b.number}
                       </p>
@@ -464,7 +496,7 @@ export function MyBookings() {
                  <Link to="/entry-qr">
                   Scan Entry QR
                 </Link>
-                      <button onClick={() => cancelBooking(b.id)}>
+                      <button onClick={() => cancel(b.id)}>
                         Cancel Booking
                       </button>
                     </>
@@ -650,12 +682,16 @@ export function HistoryPage() {
     [type, setType] = useState("All"),
     [status, setStatus] = useState("All"),
     [date, setDate] = useState("All dates");
-  const rows = userBookings.filter(
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    request("/bookings/my").then((data) => setItems((data.bookings || []).map(asBooking))).catch((error) => console.error("History error:", error));
+  }, []);
+  const rows = items.filter(
     (b) =>
       (type === "All" || b.vehicle === type) &&
       (status === "All" || b.status === status) &&
       (date === "All dates" || b.date === date) &&
-      `${b.id} ${b.slot} ${b.number}`
+      `${b.bookingId} ${b.slot} ${b.number}`
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
@@ -688,7 +724,7 @@ export function HistoryPage() {
           </select>
           <select value={date} onChange={(e) => setDate(e.target.value)}>
             <option>All dates</option>
-            {[...new Set(userBookings.map((b) => b.date))].map((d) => (
+            {[...new Set(items.map((b) => b.date))].map((d) => (
               <option key={d}>{d}</option>
             ))}
           </select>
@@ -705,13 +741,23 @@ export function HistoryPage() {
 }
 export function ProfilePage() {
   const [edit, setEdit] = useState(false),
-    [passwordOpen, setPasswordOpen] = useState(false),
-    [profile, setProfile] = useState(currentUser);
+    [profile, setProfile] = useState(null);
+  useEffect(() => {
+    request("/auth/me").then((data) => setProfile(data.user)).catch((error) => console.error("Profile error:", error));
+  }, []);
   const fields = [
     ["Full Name", "name"],
     ["College Email", "email"],
-    ["Mobile Number", "phone"],
+    ["Mobile Number", "mobile"],
   ];
+  const saveProfile = async () => {
+    try {
+      const data = await request("/auth/me", { method: "PUT", body: JSON.stringify({ name: profile.name, mobile: profile.mobile || "" }) });
+      setProfile(data.user);
+      setEdit(false);
+    } catch (error) { window.alert(error.message); }
+  };
+  if (!profile) return <UserLayout title="Profile"><div className="user-content"><p>Loading profile...</p></div></UserLayout>;
   return (
     <UserLayout
       title="Profile"
@@ -719,15 +765,15 @@ export function ProfilePage() {
     >
       <div className="user-content">
         <section className="profile-hero">
-          <div className="profile-avatar">VP</div>
+          <div className="profile-avatar">{initials(profile.name)}</div>
           <div>
             <h2>{profile.name}</h2>
             <p>
-              {profile.role} · {profile.collegeId}
+              {profile.role} · {profile.collegeId || profile.facultyId || "—"}
             </p>
             <span>{profile.email}</span>
           </div>
-          <button onClick={() => setEdit(!edit)}>
+          <button onClick={() => edit ? saveProfile() : setEdit(true)}>
             {edit ? "Save Profile" : "Edit Profile"}
           </button>
         </section>
@@ -742,7 +788,7 @@ export function ProfilePage() {
           title="College Information"
           fields={[
             ["Role", "role"],
-            ["Enrollment / Computer Code", "collegeId"],
+            ["Enrollment / Computer Code", profile.role === "faculty" ? "facultyId" : "collegeId"],
           ]}
           profile={profile}
         />
@@ -751,7 +797,7 @@ export function ProfilePage() {
           <div className="profile-info">
             <div>
               <small>Vehicle Number</small>
-              <b>{profile.vehicle}</b>
+              <b>Selected while making a booking</b>
             </div>
             <div className="profile-note">
               <AlertCircle size={17} />
@@ -759,39 +805,59 @@ export function ProfilePage() {
             </div>
           </div>
         </section>
-        <button className="password-btn" onClick={() => setPasswordOpen(true)}>
+        <Link className="password-btn" to="/change-password">
           <ShieldCheck size={17} />
           Change Password
-        </button>
+        </Link>
       </div>
-      <AnimatePresence>
-        {passwordOpen && (
-          <div className="modal-wrap">
-            <motion.div
-              className="mock-modal"
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94 }}
-            >
-              <button
-                className="modal-close"
-                onClick={() => setPasswordOpen(false)}
-              >
-                <X />
-              </button>
-              <ShieldCheck />
-              <h2>Change Password</h2>
-              <p>
-                Password updating will be connected when authentication is added
-                in the next stage.
-              </p>
-              <button onClick={() => setPasswordOpen(false)}>Got it</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </UserLayout>
   );
+}
+export function ChangePasswordPage() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    if (form.newPassword !== form.confirmPassword) return setError("New password and confirmation do not match.");
+    setSaving(true); setError("");
+    try {
+      await request("/auth/me/password", { method: "PUT", body: JSON.stringify(form) });
+      navigate("/profile");
+    } catch (requestError) { setError(requestError.message); } finally { setSaving(false); }
+  };
+  return <UserLayout title="Change Password" subtitle="Keep your ParkEase account secure."><div className="user-content"><form className="surface password-page" onSubmit={submit}>
+    <Link className="back-link" to="/profile">← Back to Profile</Link><h2>Update your password</h2>
+    <label className="field"><span>Current Password</span><input type="password" value={form.currentPassword} onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} required /></label>
+    <label className="field"><span>New Password</span><input type="password" minLength="6" value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} required /></label>
+    <label className="field"><span>Confirm New Password</span><input type="password" minLength="6" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required /></label>
+    {error && <p className="error">{error}</p>}<button className="password-btn" type="submit" disabled={saving}>{saving ? "Changing..." : "Change Password"}</button><Link className="text-link password-forgot" to="/forgot-password">Forgot password?</Link>
+  </form></div></UserLayout>;
+}
+export function ForgotPasswordPage() {
+  const [searchParams] = useSearchParams();
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const token = searchParams.get("token");
+  const submit = async (event) => {
+    event.preventDefault(); setMessage("");
+    try {
+      if (token) {
+        if (newPassword !== confirmPassword) throw new Error("New password and confirmation do not match.");
+        const data = await request("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
+        setMessage(data.message);
+      } else {
+        const data = await request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+        setMessage(data.message);
+      }
+    } catch (error) { setMessage(error.message); }
+  };
+  return <div className="user-app"><main className="user-main"><section className="user-content"><form className="surface password-page" onSubmit={submit}><h1>{token ? "Reset Password" : "Forgot Password"}</h1><p>{token ? "Choose a new password for your account." : "Enter your account email to receive reset instructions."}</p>
+    {token ? <><label className="field"><span>New Password</span><input type="password" minLength="6" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required /></label><label className="field"><span>Confirm New Password</span><input type="password" minLength="6" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required /></label></> : <label className="field"><span>College Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>}
+    {message && <p>{message}</p>}<button className="password-btn" type="submit">{token ? "Reset Password" : "Send Reset Instructions"}</button><Link className="text-link password-forgot" to="/login">Back to Sign In</Link></form></section></main></div>;
 }
 function ProfileSection({ title, fields, profile, setProfile, edit = false }) {
   return (
@@ -824,20 +890,8 @@ export function NotificationsPage() {
   useEffect(() => {
   const loadNotifications = async () => {
     try {
-      const token = localStorage.getItem("parkease_token");
-
-      const response = await fetch(
-        "http://localhost:5000/api/notifications",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
+      const data = await request("/notifications");
+      {
         setItems(
           (data.notifications || []).map((n) => ({
             ...n,
@@ -846,7 +900,7 @@ export function NotificationsPage() {
             category:
               n.type === "booking"
                 ? "Bookings"
-                : n.type === "parking"
+                : ["parking", "reminder"].includes(n.type)
                   ? "Parking"
                   : "System",
           }))
@@ -860,25 +914,16 @@ export function NotificationsPage() {
   };
 
   loadNotifications();
+  const refreshTimer = window.setInterval(loadNotifications, 30000);
+  return () => window.clearInterval(refreshTimer);
 }, []);
   const shown = items.filter(
     (n) => tab === "All" || (tab === "Unread" ? n.unread : n.category === tab),
   );
   const markRead = async (id) => {
   try {
-    const token = localStorage.getItem("parkease_token");
-
-    const response = await fetch(
-      `http://localhost:5000/api/notifications/${id}/read`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    if (response.ok) {
+    await request(`/notifications/${id}/read`, { method: "PATCH" });
+    {
       setItems((current) =>
         current.map((n) =>
           n.id === id ? { ...n, unread: false, isRead: true } : n
@@ -899,24 +944,13 @@ export function NotificationsPage() {
           <Tabs
             value={tab}
             set={setTab}
-            values={["All", "Unread", "Bookings", "Parking", "System"]}
+            values={["All", "Unread", "Bookings"]}
           />
           <button
   onClick={async () => {
     try {
-      const token = localStorage.getItem("parkease_token");
-
-      const response = await fetch(
-        "http://localhost:5000/api/notifications/read-all",
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
+      await request("/notifications/read-all", { method: "PATCH" });
+      {
         setItems((current) =>
           current.map((n) => ({
             ...n,
@@ -934,9 +968,9 @@ export function NotificationsPage() {
 </button>
         </div>
         <section className="surface notification-list">
-          {shown.map((n) => (
+          {shown.length ? shown.map((n) => (
             <Notice n={n} onRead={markRead} key={n.id} />
-          ))}
+          )) : !loading && <Empty text="No notifications to show." />}
         </section>
       </div>
     </UserLayout>

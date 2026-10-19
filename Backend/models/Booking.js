@@ -35,6 +35,8 @@ const schema = new mongoose.Schema(
     parkingEndedAt: { type: Date, default: null },
     noShowDeadline: { type: Date, required: true },
     extensionCount: { type: Number, default: 0 },
+    endReminderSentAt: { type: Date, default: null },
+    endOverdueReminderSentAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

@@ -4,6 +4,10 @@ async function list(req, res, next) {
   try {
     const { vehicleType, zone, startTime, endTime } = req.query;
     const filter = {};
+    // Administrators manage every slot. Users should only receive slots that
+    // are enabled by an administrator, so unavailable slots never appear in
+    // their parking selection.
+    if (req.user.role !== "admin") filter.status = "available";
     if (vehicleType) filter.vehicleType = vehicleType;
     if (zone) filter.zone = zone;
     const slots = await ParkingSlot.find(filter)
