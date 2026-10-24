@@ -1,15 +1,19 @@
 const ParkingSlot = require("../models/ParkingSlot");
 const Booking = require("../models/Booking");
+
+const isFiveMinuteBoundary = (time) =>
+  time.getMinutes() % 5 === 0 &&
+  time.getSeconds() === 0 &&
+  time.getMilliseconds() === 0;
 async function list(req, res, next) {
   try {
-    const { vehicleType, zone, startTime, endTime } = req.query;
+    const { vehicleType, startTime, endTime } = req.query;
     const filter = {};
     // Administrators manage every slot. Users should only receive slots that
     // are enabled by an administrator, so unavailable slots never appear in
     // their parking selection.
     if (req.user.role !== "admin") filter.status = "available";
     if (vehicleType) filter.vehicleType = vehicleType;
-    if (zone) filter.zone = zone;
     const slots = await ParkingSlot.find(filter)
       .sort({ vehicleType: 1, slotNumber: 1 })
       .lean();
@@ -18,16 +22,17 @@ async function list(req, res, next) {
         success: true,
         slots: slots.map((s) => ({
           ...s,
+          zone: undefined,
           availabilityStatus:
             s.status === "disabled" ? "disabled" : "available",
         })),
       });
     const start = new Date(startTime),
       end = new Date(endTime);
-    if (!(start < end))
+    if (!(start < end) || !isFiveMinuteBoundary(start) || !isFiveMinuteBoundary(end))
       return res
         .status(400)
-        .json({ success: false, message: "Invalid time range" });
+        .json({ success: false, message: "Select a valid time range in 5-minute intervals" });
     const busy = await Booking.find({
       status: { $in: ["booked", "active"] },
       startTime: { $lt: end },
@@ -38,6 +43,7 @@ async function list(req, res, next) {
       success: true,
       slots: slots.map((s) => ({
         ...s,
+        zone: undefined,
         availabilityStatus:
           s.status === "disabled"
             ? "disabled"

@@ -2023,6 +2023,282 @@ footer {
     display: none;
   }
 }
+
+/* Responsive refinements: preserve the desktop design while preventing
+   viewport overflow on phones and compact tablets. */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+img,
+svg {
+  max-width: 100%;
+}
+@media (max-width: 900px) {
+  .nav {
+    padding: 0 20px;
+    gap: 14px;
+  }
+  .nav-links {
+    gap: 15px;
+  }
+  .parking-controls {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .parking-controls .date-control {
+    grid-column: span 2;
+  }
+  .booking-confirm-grid {
+    gap: 30px;
+  }
+  .admin-main header {
+    padding: 0 22px;
+  }
+  .admin-content {
+    padding: 24px 22px;
+  }
+}
+@media (max-width: 680px) {
+  .nav {
+    height: 64px;
+    padding: 0 16px;
+  }
+  .nav-links,
+  .login-link {
+    display: none;
+  }
+  .nav-actions {
+    margin-left: auto;
+  }
+  .nav-register {
+    padding: 8px 11px;
+    font-size: 11px;
+  }
+  .parking-nav {
+    height: 62px;
+  }
+  .parking-nav .logo {
+    font-size: 16px;
+  }
+  .parking-nav-cta {
+    font-size: 11px !important;
+  }
+  .parking-page,
+  .booking-page,
+  .dashboard-page {
+    padding: 25px 14px 48px;
+  }
+  .parking-head h1,
+  .booking-page h1,
+  .dashboard-page h1,
+  .confirmation-card h1 {
+    font-size: 28px;
+  }
+  .parking-controls {
+    grid-template-columns: 1fr;
+    padding: 13px;
+  }
+  .parking-controls .date-control {
+    grid-column: auto;
+  }
+  .date-control > div,
+  .date-control input {
+    width: 100%;
+  }
+  .parking-layout {
+    padding: 46px 12px 42px;
+  }
+  .slot-grid.car {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .slot-grid.bike {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .slot-card,
+  .slot-grid.bike .slot-card {
+    min-height: 78px;
+  }
+  .slot-card small {
+    display: none;
+  }
+  .map-mark.entry { left: 13px; }
+  .map-mark.block { right: 13px; }
+  .booking-steps {
+    margin: 24px 0;
+  }
+  .booking-steps > div:not(:last-child):after {
+    width: 22px;
+    margin-left: 5px;
+  }
+  .booking-details > div {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+  .confirmation-page {
+    padding: 36px 13px;
+    min-height: auto;
+  }
+  .confirmation-info {
+    grid-template-columns: 1fr;
+  }
+  .confirmation-actions,
+  .booking-buttons,
+  .detail-actions,
+  .card-actions {
+    flex-wrap: wrap;
+  }
+  .confirmation-actions a,
+  .booking-buttons > *,
+  .detail-actions > *,
+  .card-actions > * {
+    min-width: calc(50% - 5px);
+  }
+  .auth-options {
+    align-items: flex-start;
+    gap: 10px;
+    flex-direction: column;
+  }
+  .role-picker,
+  .auth-vehicle-picker {
+    flex-wrap: wrap;
+  }
+  .role-picker button,
+  .auth-vehicle-picker button {
+    flex: 1 1 130px;
+  }
+  .user-top {
+    gap: 10px;
+  }
+  .top-avatar {
+    flex: none;
+  }
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+  .stat-grid article {
+    min-height: 70px;
+  }
+  .quick-grid {
+    grid-template-columns: 1fr;
+  }
+  .booking-highlight,
+  .card-booking-head {
+    align-items: flex-start;
+  }
+  .notice {
+    gap: 8px;
+  }
+  .notice > small {
+    min-width: 64px;
+    text-align: right;
+  }
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+  .history-filters {
+    grid-template-columns: 1fr;
+  }
+  .history-filters label {
+    grid-column: auto;
+  }
+  .history-filters select {
+    width: 100%;
+  }
+  .profile-hero {
+    padding: 18px;
+  }
+  .profile-hero button {
+    margin-left: 0;
+    width: 100%;
+  }
+  .password-page {
+    padding: 20px 16px;
+  }
+  .password-page .password-forgot {
+    display: block;
+    margin: 14px 0 0;
+  }
+  .admin-main header {
+    min-height: 76px;
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .admin-main header h1 {
+    font-size: 21px;
+  }
+  .admin-main header p {
+    display: none;
+  }
+  .admin-content {
+    padding: 16px 12px 36px;
+  }
+  .admin-stats {
+    grid-template-columns: 1fr;
+  }
+  .admin-stat {
+    padding: 14px;
+  }
+  .admin-slot-overview > div {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .admin-toolbar label,
+  .admin-toolbar > input {
+    width: 100%;
+  }
+  .admin-toolbar input {
+    min-width: 0;
+    width: 100%;
+  }
+  .admin-table article {
+    min-width: 620px;
+  }
+  .admin-slot-table article {
+    min-width: 0;
+    grid-template-columns: minmax(48px, .65fr) minmax(48px, .65fr) 1.7fr;
+    gap: 7px;
+    padding: 12px 10px;
+  }
+  .slot-status-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .event-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .event-row button {
+    margin-left: 0;
+  }
+  .simple-chart {
+    gap: 7px;
+  }
+  .simple-chart i {
+    flex: 1;
+    max-width: 25px;
+  }
+}
+@media (max-width: 380px) {
+  .slot-status-actions button {
+    padding: 5px;
+    font-size: 8px;
+  }
+  .admin-slot-table article {
+    grid-template-columns: 42px 42px 1fr;
+  }
+  .parking-legend {
+    font-size: 9px;
+  }
+  .modal-wrap {
+    padding: 10px;
+  }
+  .mock-modal {
+    padding: 28px 18px;
+  }
+}
 .auth-redesign {
   max-width: 1120px;
   min-height: 650px;
@@ -2145,7 +2421,8 @@ footer {
   color: #36577f;
   margin-bottom: 7px;
 }
-.auth-field input {
+.auth-field input,
+.auth-field select {
   width: 100%;
   height: 45px;
   border: 1px solid #c9ddf4;
@@ -4336,6 +4613,9 @@ footer {
 .admin-slot-table article {
   grid-template-columns: 1.1fr 1fr auto;
 }
+.admin-users-table article {
+  grid-template-columns: 1fr .65fr .85fr 1.35fr .85fr 1fr auto auto;
+}
 .admin-table article:first-child {
   border-top: 0;
 }
@@ -4429,7 +4709,54 @@ footer {
   .admin-table article {
     min-width: 680px;
   }
+  .admin-users-table article { min-width: 900px; }
   .admin-toolbar {
     flex-wrap: wrap;
   }
+}
+
+/* Keep these last so they win over legacy page-specific responsive rules. */
+@media (max-width: 680px) {
+  .user-content { padding: 21px 16px 45px; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .quick-grid { grid-template-columns: 1fr; }
+  .user-top { gap: 10px; }
+  .history-filters { grid-template-columns: 1fr; }
+  .history-filters label { grid-column: auto; }
+  .history-filters select { width: 100%; }
+  .profile-hero { padding: 18px; }
+  .profile-hero button { margin-left: 0; width: 100%; }
+  .parking-page, .booking-page, .dashboard-page { padding: 25px 14px 48px; }
+  .parking-head h1, .booking-page h1, .dashboard-page h1, .confirmation-card h1 { font-size: 28px; }
+  .parking-controls { grid-template-columns: 1fr; padding: 13px; }
+  .parking-controls .date-control { grid-column: auto; }
+  .date-control > div, .date-control input { width: 100%; }
+  .parking-layout { padding: 46px 12px 42px; }
+  .slot-grid.car { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .slot-grid.bike { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .slot-card, .slot-grid.bike .slot-card { min-height: 78px; }
+  .slot-card small { display: none; }
+  .booking-details > div { align-items: flex-start; gap: 12px; flex-direction: column; }
+  .confirmation-info, .details-grid { grid-template-columns: 1fr; }
+  .confirmation-actions, .booking-buttons, .detail-actions, .card-actions { flex-wrap: wrap; }
+  .confirmation-actions a, .booking-buttons > *, .detail-actions > *, .card-actions > * { min-width: calc(50% - 5px); }
+  .auth-options { align-items: flex-start; gap: 10px; flex-direction: column; }
+  .admin-main header { min-height: 76px; padding: 12px 14px; gap: 10px; }
+  .admin-main header h1 { font-size: 21px; }
+  .admin-main header p { display: none; }
+  .admin-content { padding: 16px 12px 36px; }
+  .admin-stats { grid-template-columns: 1fr; }
+  .admin-slot-overview > div { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .admin-toolbar label, .admin-toolbar > input { width: 100%; }
+  .admin-toolbar input { min-width: 0; width: 100%; }
+  .admin-table article { min-width: 620px; }
+  .admin-slot-table article { min-width: 0; grid-template-columns: minmax(48px, .65fr) minmax(48px, .65fr) 1.7fr; gap: 7px; padding: 12px 10px; }
+  .slot-status-actions { justify-content: flex-end; flex-wrap: wrap; }
+  .event-row { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .event-row button { margin-left: 0; }
+}
+@media (max-width: 380px) {
+  .slot-status-actions button { padding: 5px; font-size: 8px; }
+  .admin-slot-table article { grid-template-columns: 42px 42px 1fr; }
+  .mock-modal { padding: 28px 18px; }
 }

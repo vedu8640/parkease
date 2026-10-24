@@ -1,9 +1,11 @@
 const router = require("express").Router();
 const c = require("../controllers/authController");
 const { protect } = require("../middleware/auth");
-router.post("/register", c.register);
+const upload = require("../middleware/identityUpload");
+router.post("/register", upload.single("identityDocument"), c.register);
 router.post("/login", c.login);
 router.post("/forgot-password", c.forgotPassword);
+router.post("/verify-reset-email", c.verifyResetEmail);
 router.post("/reset-password", c.resetPassword);
 router.get("/me", protect, c.me);
 router.put("/me", protect, c.updateMe);

@@ -55,11 +55,25 @@ async function sendParkingEndReminders() {
     );
   }
 }
+async function sendParkingStartReminders() {
+  const now = new Date();
+  const tenMinutesFromNow = new Date(now.getTime() + 10 * 60000);
+  const upcoming = await Booking.find({
+    status: "booked",
+    startTime: { $gt: now, $lte: tenMinutesFromNow },
+    startReminderSentAt: null,
+  });
+  for (const booking of upcoming) {
+    booking.startReminderSentAt = now;
+    await booking.save();
+    await notify(booking.user, "Parking starts in 10 minutes", `Booking ${booking.bookingId} starts soon. Please be ready for entry.`, "reminder", `/booking/${booking._id}`);
+  }
+}
 function start() {
   cron.schedule("* * * * *", () =>
-    Promise.all([release(), sendParkingEndReminders()]).catch((e) =>
+    Promise.all([release(), sendParkingStartReminders(), sendParkingEndReminders()]).catch((e) =>
       console.error("Parking notification job:", e.message),
     ),
   );
 }
-module.exports = { start, release, sendParkingEndReminders };
+module.exports = { start, release, sendParkingStartReminders, sendParkingEndReminders };

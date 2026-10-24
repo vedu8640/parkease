@@ -4,9 +4,14 @@ const { bookingId, randomToken } = require("../utils/token");
 const { conflict } = require("../utils/availability");
 const notify = require("../utils/notify");
 
+const isFiveMinuteBoundary = (time) =>
+  time.getMinutes() % 5 === 0 &&
+  time.getSeconds() === 0 &&
+  time.getMilliseconds() === 0;
+
 const populate = (q) =>
   q
-    .populate("slot", "slotNumber zone vehicleType")
+    .populate("slot", "slotNumber vehicleType")
     .populate("user", "name email role collegeId facultyId");
 
 async function create(req, res, next) {
@@ -36,10 +41,18 @@ async function create(req, res, next) {
       });
     }
 
-    if (start >= end || start < new Date()) {
+    if (!/^[A-Z0-9 -]{4,15}$/i.test(vehicleNumber))
+      return res.status(400).json({ success: false, message: "Enter a valid vehicle number" });
+
+    if (
+      start >= end ||
+      start < new Date() ||
+      !isFiveMinuteBoundary(start) ||
+      !isFiveMinuteBoundary(end)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking time",
+        message: "Choose a valid booking time in 5-minute intervals",
       });
     }
 

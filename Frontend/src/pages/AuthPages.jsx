@@ -14,7 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 
-import { loginMockUser, registerMockUser } from "../services/authService";
+import { loginMockUser, registerUserWithIdentity } from "../services/authService";
 
 function AuthVisual() {
   return (
@@ -75,19 +75,19 @@ function AuthVisual() {
   );
 }
 
-function Password({ value, setValue }) {
+function Password({ value, setValue, label = "Password", placeholder = "Enter your password" }) {
   const [show, setShow] = useState(false);
 
   return (
     <label className="auth-field">
-      <span>Password</span>
+      <span>{label}</span>
 
       <div>
         <input
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Enter your password"
+          placeholder={placeholder}
         />
 
         <button type="button" onClick={() => setShow(!show)}>
@@ -196,7 +196,7 @@ export function NewLogin() {
             Remember me
           </label>
 
-          <a href="#forgot">Forgot password?</a>
+          <Link to="/forgot-password">Forgot password?</Link>
         </div>
 
         <AnimatePresence>
@@ -252,6 +252,10 @@ export function NewRegister() {
   });
 
   const [error, setError] = useState("");
+  const [identityDocument, setIdentityDocument] = useState(null);
+  const [identityType, setIdentityType] = useState("aadhaar");
+  const [identityNumber, setIdentityNumber] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const update = (key) => (value) => {
     setForm({
@@ -260,10 +264,10 @@ export function NewRegister() {
     });
   };
 
-  function submit(e) {
+  async function submit(e) {
     e.preventDefault();
 
-    if (Object.values(form).some((v) => !v)) {
+    if (Object.values(form).some((v) => !v) || !identityNumber || !identityDocument) {
       setError("Please complete all required fields.");
       return;
     }
@@ -273,17 +277,25 @@ export function NewRegister() {
       return;
     }
 
-    setError("");
-
-    sessionStorage.setItem(
-      "parkease-registration",
-      JSON.stringify({
-        ...form,
-        role,
-      }),
-    );
-
-    nav("/login");
+    setError(""); setLoading(true);
+    try {
+      const payload = new FormData();
+      payload.append("name", form.name);
+      payload.append("email", form.email);
+      payload.append("password", form.password);
+      payload.append("role", role);
+      payload.append(role === "student" ? "collegeId" : "facultyId", form.id);
+      payload.append("mobile", form.mobile);
+      payload.append("vehicleNumber", form.vehicle);
+      payload.append("vehicleType", form.vehicleType.toLowerCase());
+      payload.append("identityType", identityType);
+      payload.append("identityNumber", identityNumber);
+      payload.append("identityDocument", identityDocument);
+      await registerUserWithIdentity(payload);
+      nav("/dashboard");
+    } catch (registrationError) {
+      setError(registrationError.message);
+    } finally { setLoading(false); }
   }
 
   const idLabel =
@@ -346,6 +358,26 @@ export function NewRegister() {
                 placeholder="Enter your full name"
               />
 
+              <label className="auth-field">
+                <span>Identity Type</span>
+                <select value={identityType} onChange={(e) => setIdentityType(e.target.value)}>
+                  <option value="aadhaar">Aadhaar Card</option>
+                  <option value="vehicle_registration">Vehicle Registration ID</option>
+                </select>
+              </label>
+
+              <Input
+                label={identityType === "aadhaar" ? "Aadhaar Number" : "Vehicle Registration ID"}
+                value={identityNumber}
+                setValue={setIdentityNumber}
+                placeholder={identityType === "aadhaar" ? "12-digit Aadhaar number" : "Enter registration ID"}
+              />
+
+              <label className="auth-field">
+                <span>{identityType === "aadhaar" ? "Upload Aadhaar photo with your name visible" : "Upload a clear vehicle registration image"} (JPG or PNG; max 5 MB)</span>
+                <input type="file" accept="image/jpeg,image/png" onChange={(e) => setIdentityDocument(e.target.files?.[0] || null)} required />
+              </label>
+
               <Input
                 label="College Email"
                 value={form.email}
@@ -401,9 +433,19 @@ export function NewRegister() {
                 </div>
               </label>
 
-              <Password value={form.password} setValue={update("password")} />
+              <Password
+                value={form.password}
+                setValue={update("password")}
+                label="Enter Password"
+                placeholder="Enter your password"
+              />
 
-              <Password value={form.confirm} setValue={update("confirm")} />
+              <Password
+                value={form.confirm}
+                setValue={update("confirm")}
+                label="Confirm Password"
+                placeholder="Confirm your password"
+              />
             </div>
           </motion.div>
         </AnimatePresence>
@@ -420,8 +462,8 @@ export function NewRegister() {
           )}
         </AnimatePresence>
 
-        <button className="auth-submit" type="submit">
-          Create Account <ArrowRight size={17} />
+        <button className="auth-submit" type="submit" disabled={loading}>
+          {loading ? "Creating account…" : <>Create Account <ArrowRight size={17} /></>}
         </button>
 
         <p className="auth-switch">

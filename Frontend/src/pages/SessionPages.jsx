@@ -307,7 +307,7 @@ export function ActiveParkingPage() {
           <div>
             <span>ACTIVE PARKING</span>
             <h2>
-              {booking.slot} · {booking.zone}
+              {booking.slot}
             </h2>
             <p>
               {booking.vehicle} · {booking.number}
@@ -461,7 +461,6 @@ function BookingSummary({ booking }) {
         ["Vehicle Number", booking.number],
         ["Vehicle Type", booking.vehicle],
         ["Parking Slot", booking.slot],
-        ["Zone", booking.zone],
         ["Date", booking.date],
         ["Time", `${booking.start} – ${booking.end}`],
       ].map(([key, value]) => (

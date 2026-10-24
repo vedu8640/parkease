@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { domMax, motion } from "framer-motion";
 import {
   Bell,
@@ -15,6 +15,7 @@ import {
   Search,
   Users,
   QrCode,
+  FileWarning,
 } from "lucide-react";
 import { useAuthenticatedUser, logoutMockUser } from "../services/authService";
 import { request } from "../services/api";
@@ -23,6 +24,7 @@ const links = [
   ["Dashboard", "/admin/dashboard", LayoutDashboard],
   ["Parking Slots", "/admin/slots", MapPin],
   ["Bookings", "/admin/bookings", CalendarDays],
+  ["Complaint Book", "/admin/complaints", FileWarning],
   ["Users", "/admin/users", Users],
   ["Reports", "/admin/reports", FileBarChart],
   ["Events & Guests", "/admin/events", CalendarDays],
@@ -34,6 +36,7 @@ const Status = ({ value }) => (
     {value}
   </span>
 );
+const currentPathId = () => decodeURIComponent(window.location.pathname.split("/").filter(Boolean).at(-1) || "");
 export function AdminLayout({ title, children }) {
   const [open, setOpen] = useState(false);
   const admin = useAuthenticatedUser();
@@ -213,7 +216,7 @@ export function SlotsPage() {
   );
 }
 export function EditSlotPage() {
-  const { id } = useParams();
+  const id = currentPathId();
   const navigate = useNavigate();
   const [slot, setSlot] = useState(null);
   const [form, setForm] = useState(null);
@@ -227,7 +230,7 @@ export function EditSlotPage() {
         if (!selectedSlot) throw new Error("Parking slot not found.");
         if (active) {
           setSlot(selectedSlot);
-          setForm({ slotNumber: selectedSlot.slotNumber, vehicleType: selectedSlot.vehicleType, zone: selectedSlot.zone, notes: selectedSlot.notes || "", status: selectedSlot.status });
+          setForm({ slotNumber: selectedSlot.slotNumber, vehicleType: selectedSlot.vehicleType, notes: selectedSlot.notes || "", status: selectedSlot.status });
         }
       })
       .catch((requestError) => active && setError(requestError.message));
@@ -265,22 +268,6 @@ export function EditSlotPage() {
           <option value="car">Car</option><option value="bike">Bike</option>
         </select>
         </label>
-        <label className="field"><span>Zone</span>
-        <select
-          value={form.zone}
-          onChange={(e) => setForm({ ...form, zone: e.target.value })}
-        >
-          {[
-            "Student Zone",
-            "Faculty Zone",
-            "Academic Block",
-            "Admin Block",
-            "Library Block",
-          ].map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </select>
-        </label>
         <label className="field"><span>Notes</span><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
         <label className="field"><span>Status</span><div className="choice-row">
           <button type="button" className={form.status === "available" ? "selected" : ""} onClick={() => setForm({ ...form, status: "available" })}>Available</button>
@@ -292,6 +279,41 @@ export function EditSlotPage() {
     </AdminLayout>
   );
 }
+export function ComplaintsPage() {
+  const [complaints, setComplaints] = useState([]);
+  const [error, setError] = useState("");
+  const load = () => request("/admin/violations")
+    .then((data) => setComplaints(data.violations || []))
+    .catch((loadError) => setError(loadError.message));
+  useEffect(() => {
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const update = async (complaint, status) => {
+    const adminAction = window.prompt("Admin action / call note:", complaint.adminAction || "");
+    if (adminAction === null) return;
+    try {
+      await request(`/violations/${complaint._id}`, { method: "PATCH", body: JSON.stringify({ status, adminAction }) });
+      load();
+    } catch (updateError) { setError(updateError.message); }
+  };
+  return <AdminLayout title="Complaint Book">
+    {error && <p className="error">{error}</p>}
+    <section className="admin-card admin-table">
+      {!complaints.length ? <p>No complaints recorded.</p> : complaints.map((complaint) => <article key={complaint._id}>
+        <div><b>{complaint.complaintId || complaint._id}</b><small>{new Date(complaint.createdAt).toLocaleString("en-IN")}</small></div>
+        <div><b>{complaint.slot?.slotNumber || "—"}</b><small>Wrongly occupied · {complaint.vehicleNumber || "vehicle not recorded"}</small></div>
+        <div><b>Reporter: {complaint.reportedBy?.name || "—"}</b><small>{complaint.reporterBooking?.bookingId || "—"} · {complaint.reporterBooking?.slot?.slotNumber || "—"}</small></div>
+        <div><b>Involved: {complaint.occupantBooking?.user?.name || "—"}</b><small>{complaint.occupantBooking?.bookingId || "—"} · Original {complaint.occupantOriginalSlot?.slotNumber || "—"}</small></div>
+        <div><b>Alternative: {complaint.alternativeSlot?.slotNumber || "Not assigned"}</b><small>Transfer: {complaint.transferStatus}{complaint.occupantAlternativeSlot?.slotNumber ? ` · Suggested for involved user: ${complaint.occupantAlternativeSlot.slotNumber}` : ""}</small></div>
+        <Status value={complaint.status} />
+        {complaint.status === "pending_admin" ? <button onClick={() => update(complaint, "resolved")}>Record resolution</button> : <button onClick={() => update(complaint, "reviewed")}>Add action</button>}
+      </article>)}
+    </section>
+  </AdminLayout>;
+}
+
 export function BookingsPage() {
   const [bookings, setBookings] = useState([]);
   useEffect(() => {
@@ -326,7 +348,7 @@ export function BookingsPage() {
   );
 }
 export function AdminBookingDetails() {
-  const { id } = useParams();
+  const id = currentPathId();
   const [b, setBooking] = useState(null);
   useEffect(() => { request("/admin/bookings").then((data) => setBooking((data.bookings || []).find((booking) => booking._id === id) || null)).catch((error) => console.error("Booking details error:", error)); }, [id]);
   return (
@@ -342,7 +364,6 @@ export function AdminBookingDetails() {
             Vehicle: b.vehicleNumber,
             Type: b.vehicleType,
             Slot: b.slot?.slotNumber || "—",
-            Zone: b.slot?.zone || "—",
             Date: new Date(b.startTime).toLocaleDateString("en-IN"),
             Time: `${new Date(b.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })} – ${new Date(b.endTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`,
             Status: b.status,
@@ -371,13 +392,15 @@ export function UsersPage() {
   return (
     <AdminLayout title="Users">
       <AdminSearch placeholder="Name, college ID or email" />
-      <section className="admin-card admin-table">
+      <section className="admin-card admin-table admin-users-table">
         {users.map((u) => (
           <article key={u._id}>
             <b>{u.name}</b>
             <span>{u.role}</span>
             <span>{u.collegeId || u.facultyId || "—"}</span>
             <span>{u.email}</span>
+            <span>{u.mobile || "—"}</span>
+            <span>{u.identityNumber || "—"}</span>
             <Status value={u.isActive ? "Active" : "Inactive"} />
             <Link to={`/admin/users/${u._id}`}>View</Link>
           </article>
@@ -387,21 +410,50 @@ export function UsersPage() {
   );
 }
 export function UserDetails() {
-  const { id } = useParams();
+  const id = currentPathId();
   const [u, setUser] = useState(null);
-  useEffect(() => { request("/admin/users").then((data) => setUser((data.users || []).find((user) => user._id === id) || null)).catch((error) => console.error("User details error:", error)); }, [id]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [documentUrl, setDocumentUrl] = useState("");
+  useEffect(() => {
+    setLoading(true); setError("");
+    request(`/admin/users/${id}`)
+      .then((data) => setUser(data.user || null))
+      .catch((loadError) => setError(loadError.message || "Unable to load this user."))
+      .finally(() => setLoading(false));
+  }, [id]);
+  useEffect(() => {
+    if (!u?.identityDocumentPath) return undefined;
+    let active = true; let url = "";
+    request(`/admin/users/${id}/identity-document`, { responseType: "blob" })
+      .then((document) => { url = URL.createObjectURL(document); if (active) setDocumentUrl(url); })
+      .catch(() => active && setDocumentUrl(""));
+    return () => { active = false; if (url) URL.revokeObjectURL(url); };
+  }, [id, u?.identityDocumentPath]);
   return (
     <AdminLayout title="User Details">
       {u ? <section className="admin-card details-grid">
         {Object.entries({
-          ...u,
+          "Full Name": u.name,
+          Email: u.email,
+          Role: u.role,
+          "Enrollment / Faculty ID": u.collegeId || u.facultyId || "—",
+          "Mobile Number": u.mobile || "—",
+          "Vehicle Number": u.vehicleNumber || "—",
+          "Vehicle Type": u.vehicleType || "—",
+          "Identity Type": u.identityType === "aadhaar" ? "Aadhaar Card" : "Vehicle Registration ID",
+          "Identity Number": u.identityNumber || "—",
         }).map(([k, v]) => (
           <div key={k}>
             <small>{k}</small>
             <b>{v}</b>
           </div>
         ))}
-      </section> : <p>Loading user...</p>}
+        {u.identityDocumentPath && <div className="identity-review">
+          <small>Identity document</small>
+          <a href={documentUrl || "#"} target="_blank" rel="noreferrer">Open uploaded document</a>
+        </div>}
+      </section> : loading ? <p>Loading user...</p> : <p>{error || "User not found."}</p>}
     </AdminLayout>
   );
 }

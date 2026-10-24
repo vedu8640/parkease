@@ -53,6 +53,12 @@ export const registerUser = async (payload) => {
   return writeSession(response.user);
 };
 
+export const registerUserWithIdentity = async (formData) => {
+  const response = await authApi.registerWithIdentity(formData);
+  if (response.token) localStorage.setItem("parkease_token", response.token);
+  return writeSession(response.user);
+};
+
 export const loginUser = async (email, password) => {
   const response = await authApi.login({
     email: email.trim().toLowerCase(),

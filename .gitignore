@@ -3,4 +3,9 @@ node_modules/
 .env.*
 !.env.example
 dist/
-build/
+build/Backend/uploads/
+.codex-finalizer/
+.limitations-build/
+.live-demo-build/
+.technical-highlights-build/
+.testing-validation-build/

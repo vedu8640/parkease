@@ -1,5 +1,8 @@
-require("dns").setServers(["8.8.8.8"]);
 require("dotenv").config();
+const dns = require("dns");
+// Set MONGO_DNS_SERVER in .env only where an Atlas SRV lookup needs a
+// network DNS server instead of an unavailable localhost DNS proxy.
+if (process.env.MONGO_DNS_SERVER) dns.setServers([process.env.MONGO_DNS_SERVER]);
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
@@ -30,7 +33,7 @@ app.use((req, res) =>
 app.use((err, req, res, next) => {
   console.error(err);
   res
-    .status(500)
+    .status(err.name === "MulterError" || err.message?.includes("Identity document") ? 400 : 500)
     .json({ success: false, message: err.message || "Internal server error" });
 });
 const port = process.env.PORT || 5000;

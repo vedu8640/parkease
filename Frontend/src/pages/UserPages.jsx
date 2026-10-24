@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Menu,
   AlertCircle,
+  FileWarning,
 } from "lucide-react";
 import { currentUser, userBookings, mockNotifications } from "../data/mockData";
 import { getSlotStatus, makeSlots } from "../services/parkingService";
@@ -40,6 +41,7 @@ const nav = [
   ["Booking History", "/booking-history", History],
   ["Profile", "/profile", UserRound],
   ["Notifications", "/notifications", Bell],
+  ["Wrong Parking", "/wrong-parking", FileWarning],
 ];
 const statusClass = (s) => `status ${s.toLowerCase().replace(/\s/g, "-")}`;
 const displayStatus = (status) => ({ booked: "Booked", active: "Active", completed: "Completed", cancelled: "Cancelled", no_show: "No-show", expired: "Expired" }[status] || status);
@@ -47,7 +49,6 @@ const asBooking = (booking) => ({
   id: booking._id,
   bookingId: booking.bookingId,
   slot: booking.slot?.slotNumber || "—",
-  zone: booking.slot?.zone || "—",
   vehicle: booking.vehicleType === "car" ? "Car" : "Bike",
   number: booking.vehicleNumber,
   date: new Date(booking.startTime).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
@@ -288,7 +289,7 @@ export function Dashboard() {
               </div>
               <div>
                 <h3>
-                  {up.slot} · {up.zone}
+                  {up.slot}
                 </h3>
                 <p>
                   {up.bookingId} · {up.vehicle} · {up.number}
@@ -478,8 +479,8 @@ export function MyBookings() {
                 </div>
                 <div className="booking-card-info">
                   <span>
-                    <small>SLOT & ZONE</small>
-                    {b.slot} · {b.zone}
+                    <small>PARKING SLOT</small>
+                    {b.slot}
                   </span>
                   <span>
                     <small>DATE & TIME</small>
@@ -613,7 +614,6 @@ export function BookingDetails() {
               ["Vehicle Number", b.number],
               ["Vehicle Type", b.vehicle],
               ["Parking Slot", b.slot],
-              ["Zone", b.zone],
               ["Date", b.date],
               ["Start", b.start],
               ["End", b.end],
@@ -841,7 +841,8 @@ export function ForgotPasswordPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
-  const token = searchParams.get("token");
+  const [verifiedToken, setVerifiedToken] = useState("");
+  const token = searchParams.get("token") || verifiedToken;
   const submit = async (event) => {
     event.preventDefault(); setMessage("");
     try {
@@ -850,14 +851,15 @@ export function ForgotPasswordPage() {
         const data = await request("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
         setMessage(data.message);
       } else {
-        const data = await request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+        const data = await request("/auth/verify-reset-email", { method: "POST", body: JSON.stringify({ email }) });
+        setVerifiedToken(data.resetToken);
         setMessage(data.message);
       }
     } catch (error) { setMessage(error.message); }
   };
-  return <div className="user-app"><main className="user-main"><section className="user-content"><form className="surface password-page" onSubmit={submit}><h1>{token ? "Reset Password" : "Forgot Password"}</h1><p>{token ? "Choose a new password for your account." : "Enter your account email to receive reset instructions."}</p>
+  return <div className="user-app"><main className="user-main"><section className="user-content"><form className="surface password-page" onSubmit={submit}><h1>{token ? "Set New Password" : "Forgot Password"}</h1><p>{token ? "Email verified. Choose a new password for your account." : "Enter your registered email address to verify your account."}</p>
     {token ? <><label className="field"><span>New Password</span><input type="password" minLength="6" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required /></label><label className="field"><span>Confirm New Password</span><input type="password" minLength="6" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required /></label></> : <label className="field"><span>College Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>}
-    {message && <p>{message}</p>}<button className="password-btn" type="submit">{token ? "Reset Password" : "Send Reset Instructions"}</button><Link className="text-link password-forgot" to="/login">Back to Sign In</Link></form></section></main></div>;
+    {message && <p>{message}</p>}<button className="password-btn" type="submit">{token ? "Reset Password" : "Verify Email"}</button><Link className="text-link password-forgot" to="/login">Back to Sign In</Link></form></section></main></div>;
 }
 function ProfileSection({ title, fields, profile, setProfile, edit = false }) {
   return (
@@ -997,7 +999,7 @@ export function ParkingStatus() {
   return (
     <UserLayout
       title="Parking Status"
-      subtitle="See booking-based availability across campus parking zones."
+      subtitle="See booking-based availability for campus parking."
     >
       <div className="user-content">
         <div className="status-controls">
@@ -1078,4 +1080,82 @@ export function ParkingStatus() {
       </div>
     </UserLayout>
   );
+}
+
+export function WrongParkingPage() {
+  const [bookings, setBookings] = useState([]);
+  const [bookingId, setBookingId] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [description, setDescription] = useState("");
+  const [complaint, setComplaint] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const [bookingData, complaintData] = await Promise.all([
+          request("/bookings/my"),
+          request("/violations"),
+        ]);
+        if (!active) return;
+        const eligible = (bookingData.bookings || []).filter((booking) => ["booked", "active"].includes(booking.status));
+        setBookings(eligible);
+        setBookingId(eligible[0]?._id || "");
+        setComplaint((complaintData.violations || []).find((item) => ["alternative_offered", "pending_admin", "reviewed"].includes(item.status) && item.issueType === "wrong_parking") || null);
+      } catch (loadError) {
+        if (active) setError(loadError.message);
+      } finally { if (active) setLoading(false); }
+    };
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  const submit = async (event) => {
+    event.preventDefault(); setSaving(true); setError("");
+    try {
+      const data = await request("/violations/wrong-parking", {
+        method: "POST",
+        body: JSON.stringify({ reporterBookingId: bookingId, vehicleNumber, description }),
+      });
+      setComplaint(data.complaint);
+    } catch (submitError) { setError(submitError.message); }
+    finally { setSaving(false); }
+  };
+  const accept = async () => {
+    setSaving(true); setError("");
+    try {
+      const data = await request(`/violations/${complaint._id}/accept-alternative`, { method: "POST" });
+      setComplaint(data.complaint);
+    } catch (acceptError) { setError(acceptError.message); }
+    finally { setSaving(false); }
+  };
+
+  return <UserLayout title="Wrong Parking Complaint" subtitle="Report a vehicle parked in your assigned slot.">
+    <div className="user-content">
+      {error && <p className="parking-error"><AlertCircle size={15} />{error}</p>}
+      {loading ? <p>Loading your eligible bookings...</p> : complaint ? <section className="surface booking-card">
+        <h2>Complaint {complaint.complaintId}</h2>
+        <p>Assigned slot: <b>{complaint.slot?.slotNumber}</b> · Reported vehicle: <b>{complaint.vehicleNumber}</b></p>
+        {complaint.status === "alternative_offered" ? <>
+          <p>Alternative available: <b>{complaint.alternativeSlot?.slotNumber}</b>. Accepting it will keep your entry verification and QR status unchanged.</p>
+          <button className="button" onClick={accept} disabled={saving}>{saving ? "Updating..." : `Accept ${complaint.alternativeSlot?.slotNumber}`}</button>
+        </> : complaint.status === "pending_admin" ? <p>Your alternate slot has been assigned where possible; the other vehicle needs administrator action. The complaint remains open.</p> : <p>Status: <b>{complaint.status}</b></p>}
+      </section> : <form className="surface profile-form" onSubmit={submit}>
+        <h2>Report wrong parking</h2>
+        <p>Select the booking whose assigned slot is occupied, then enter the number plate of the vehicle currently there.</p>
+        {!bookings.length ? <p>No active or valid booking is available for a complaint.</p> : <>
+          <label className="field"><span>Your booking</span><select value={bookingId} onChange={(event) => setBookingId(event.target.value)}>
+            {bookings.map((booking) => <option key={booking._id} value={booking._id}>{booking.slot?.slotNumber} · {new Date(booking.startTime).toLocaleDateString("en-IN")} · {new Date(booking.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</option>)}
+          </select></label>
+          <label className="field"><span>Vehicle number in your slot</span><input required value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value.toUpperCase())} placeholder="e.g. MH 12 AB 1234" /></label>
+          <label className="field"><span>Note (optional)</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Any helpful details" /></label>
+          <button className="button" disabled={saving}>{saving ? "Submitting..." : "Submit Complaint"}</button>
+        </>}
+      </form>}
+    </div>
+  </UserLayout>;
 }

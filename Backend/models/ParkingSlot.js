@@ -16,6 +16,13 @@ const schema = new mongoose.Schema(
       default: "available",
     },
     notes: { type: String, default: "" },
+    // Kept separate from reservation availability: this represents a reported
+    // physical condition at the bay, not whether the bay can be booked.
+    physicalOccupancyStatus: {
+      type: String,
+      enum: ["unknown", "reported_wrong_parking", "occupied", "clear"],
+      default: "unknown",
+    },
   },
   { timestamps: true },
 );

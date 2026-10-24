@@ -13,37 +13,19 @@ import {
   MapPin,
   ParkingCircle,
 } from "lucide-react";
-import { registeredVehicles } from "../data/mockData";
 import { getSlotStatus, makeSlots } from "../services/parkingService";
 import { getMockBooking, saveMockBooking } from "../services/bookingService";
 import { request } from "../services/api";
+import { useAuthenticatedUser } from "../services/authService";
 
-const times = [
-  "00:00",
-  "01:00",
-  "02:00",
-  "03:00",
-  "04:00",
-  "05:00",
-  "06:00",
-  "07:00",
-  "08:00",
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-  "18:00",
-  "19:00",
-  "20:00",
-  "21:00",
-  "22:00",
-  "23:00",
-];
+// Parking can be reserved in five-minute increments, such as 10:00–10:30.
+const SLOT_INTERVAL_MINUTES = 5;
+const times = Array.from({ length: (24 * 60) / SLOT_INTERVAL_MINUTES }, (_, index) => {
+  const totalMinutes = index * SLOT_INTERVAL_MINUTES;
+  const hour = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+  const minute = String(totalMinutes % 60).padStart(2, "0");
+  return `${hour}:${minute}`;
+});
 
 const prettyTime = (time) =>
   new Date(`2026-01-01T${time}`).toLocaleTimeString("en-IN", {
@@ -162,8 +144,6 @@ function SlotCard({ slot, status, selected, onSelect }) {
 
       <Icon size={slot.type === "Car" ? 25 : 20} />
 
-      <small>{slot.zone}</small>
-
       <b>
         {selected
           ? "Selected"
@@ -211,11 +191,12 @@ function Legend() {
 
 export function ParkingPage({ initialType }) {
   const navigate = useNavigate();
+  const user = useAuthenticatedUser();
 
   const today = getToday();
 
   const [type, setType] = useState(initialType || "Car");
-  const [zone, setZone] = useState("All Zones");
+  const [vehicleNumber, setVehicleNumber] = useState("");
   const [date, setDate] = useState(today);
   const [start, setStart] = useState("10:00");
   const [end, setEnd] = useState("15:00");
@@ -225,6 +206,11 @@ export function ParkingPage({ initialType }) {
   const [loadingSlots, setLoadingSlots] = useState(true);
 
   const validTime = start < end;
+
+  useEffect(() => {
+    if (!initialType && user?.vehicleType) setType(user.vehicleType === "car" ? "Car" : "Bike");
+    if (user?.vehicleNumber) setVehicleNumber((current) => current || user.vehicleNumber);
+  }, [initialType, user?.vehicleType, user?.vehicleNumber]);
 
   useEffect(() => {
     let active = true;
@@ -238,10 +224,9 @@ export function ParkingPage({ initialType }) {
     return () => { active = false; };
   }, [type, date, start, end]);
   const slots = useMemo(() => liveSlots
-    .filter((slot) => zone === "All Zones" || slot.zone === zone)
-    .map((slot) => ({ ...slot, id: slot.slotNumber, number: slot.slotNumber, type: slot.vehicleType === "car" ? "Car" : "Bike", unavailable: slot.availabilityStatus === "disabled" })), [liveSlots, zone]);
+    .map((slot) => ({ ...slot, id: slot.slotNumber, number: slot.slotNumber, type: slot.vehicleType === "car" ? "Car" : "Bike", unavailable: slot.availabilityStatus === "disabled" })), [liveSlots]);
 
-  const vehicle = registeredVehicles.find((v) => v.type === type);
+  const vehicle = vehicleNumber.trim() ? { number: vehicleNumber.trim().toUpperCase(), type } : null;
 
   function changeType(next) {
     setType(next);
@@ -278,6 +263,7 @@ export function ParkingPage({ initialType }) {
         "Choose an available parking slot to continue."
       );
     }
+    if (!vehicle) return setNotice("Enter the vehicle number you are bringing before continuing.");
 
     const payload = {
       vehicleType: type,
@@ -301,7 +287,7 @@ export function ParkingPage({ initialType }) {
     <ParkingShell>
       <section className="parking-page">
         <div className="parking-head">
-          <span className="eyebrow">Campus Parking Zone</span>
+          <span className="eyebrow">Campus Parking</span>
 
           <h1>Find Your Parking</h1>
 
@@ -317,24 +303,13 @@ export function ParkingPage({ initialType }) {
 
         <section className="parking-controls">
           <label>
-            <span>Parking Zone</span>
-
-            <select
-              value={zone}
-              onChange={(e) => {
-                setZone(e.target.value);
-                setSelected(null);
-              }}
-            >
-              <option>All Zones</option>
-              <option>Academic Block</option>
-              <option>Library</option>
-              <option>Admin Block</option>
-              <option>Student Zone</option>
-              <option>Faculty Zone</option>
-            </select>
+            <span>Vehicle Number</span>
+            <input
+              value={vehicleNumber}
+              onChange={(event) => setVehicleNumber(event.target.value.toUpperCase())}
+              placeholder="Enter the vehicle number for this booking"
+            />
           </label>
-
           {/* Calendar Date Picker */}
           <label className="date-control">
             <span>Date</span>
@@ -359,7 +334,7 @@ export function ParkingPage({ initialType }) {
   value={start}
   onChange={(e) => setStart(e.target.value)}
 >
-  {times.slice(0, -1).map((t) => (
+  {times.map((t) => (
    <option key={t} value={t}>{prettyTime(t)}</option>
   ))}
 </select>
@@ -372,7 +347,7 @@ export function ParkingPage({ initialType }) {
     value={end}
     onChange={(e) => setEnd(e.target.value)}
   >
-    {times.slice(1).map((t) => (
+    {times.map((t) => (
       <option key={t} value={t}>{prettyTime(t)}</option>
     ))}
   </select>
@@ -391,10 +366,7 @@ export function ParkingPage({ initialType }) {
             <h2>{type} Parking</h2>
 
             <p>
-              {type === "Car"
-                ? "Student & Faculty Car Zone"
-                : "Student Bike Zone"}{" "}
-              · Available for selected time
+              Available for selected time
             </p>
           </div>
 
@@ -410,7 +382,7 @@ export function ParkingPage({ initialType }) {
 
           <AnimatePresence mode="wait">
             <motion.div
-              key={`${type}-${zone}-${date}-${start}-${end}`}
+              key={`${type}-${date}-${start}-${end}`}
               className={`slot-grid ${type.toLowerCase()}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -432,9 +404,6 @@ export function ParkingPage({ initialType }) {
             </motion.div>
           </AnimatePresence>
 
-          <div className="map-mark block">
-            <MapPin size={14} /> ACADEMIC BLOCK
-          </div>
         </div>
 
         {notice && (
@@ -456,7 +425,7 @@ export function ParkingPage({ initialType }) {
                   <small>SELECTED SLOT</small>
 
                   <b>
-                    {selected.id} · {selected.zone}
+                    {selected.id}
                   </b>
                 </p>
               </>
@@ -550,7 +519,6 @@ export function BookingPage() {
                 ["Vehicle", draft.vehicleType],
                 ["Vehicle Number", draft.vehicle.number],
                 ["Slot", draft.slot.id],
-                ["Zone", draft.slot.zone],
                 ["Date", dateLabel(draft.date)],
                 [
                   "Time",
@@ -577,7 +545,6 @@ export function BookingPage() {
 
               <div>
                 <b>{draft.slot.id}</b>
-                <small>{draft.slot.zone}</small>
               </div>
             </div>
 
@@ -611,7 +578,7 @@ export function ConfirmationPage() {
       if (!saved) return null;
       return {
         bookingId: saved.bookingId,
-        slot: { id: saved.slot?.slotNumber, zone: saved.slot?.zone },
+        slot: { id: saved.slot?.slotNumber },
         vehicleType: saved.vehicleType === "car" ? "Car" : "Bike",
         vehicle: { number: saved.vehicleNumber },
         date: new Date(saved.startTime).toISOString().slice(0, 10),
@@ -651,7 +618,7 @@ export function ConfirmationPage() {
               <div>
                 <span>Parking Slot</span>
                 <b>
-                  {booking.slot.id} · {booking.slot.zone}
+                  {booking.slot.id}
                 </b>
               </div>
 
@@ -813,7 +780,7 @@ export function DashboardPage() {
                       booking.slot?.id ||
                       "Parking Slot"}{" "}
                     ·{" "}
-                    {booking.slot?.zone || "Campus Parking"}
+                    Campus Parking
                   </h3>
 
                   <p>

@@ -34,7 +34,7 @@ import {
   DashboardPage,
   ParkingPage,
 } from "./pages/ParkingPages";
-import { NewGuest, NewLogin, NewRegisterV2 } from "./pages/AuthPages";
+import { NewGuest, NewLogin, NewRegister } from "./pages/AuthPages";
 import {
   Dashboard,
   MyBookings,
@@ -45,6 +45,7 @@ import {
   ForgotPasswordPage,
   NotificationsPage,
   ParkingStatus,
+  WrongParkingPage,
 } from "./pages/UserPages";
 import {
   ActiveParkingPage,
@@ -65,6 +66,7 @@ import {
   SlotsPage,
   UserDetails,
   UsersPage,
+  ComplaintsPage,
   
 } from "./pages/AdminPages";
 
@@ -957,7 +959,7 @@ function App() {
   const routes = {
     "/": <Home />,
     "/login": <NewLogin />,
-    "/register": <NewRegisterV2 />,
+    "/register": <NewRegister />,
     "/guest-parking": <NewGuest />,
     "/dashboard": (
       <Protected>
@@ -977,6 +979,11 @@ function App() {
     "/admin/bookings": (
       <Protected admin>
         <BookingsPage />
+      </Protected>
+    ),
+    "/admin/complaints": (
+      <Protected admin>
+        <ComplaintsPage />
       </Protected>
     ),
     "/admin/users": (
@@ -1079,6 +1086,11 @@ function App() {
     "/parking-status": (
       <Protected>
         <ParkingStatus />
+      </Protected>
+    ),
+    "/wrong-parking": (
+      <Protected>
+        <WrongParkingPage />
       </Protected>
     ),
   };

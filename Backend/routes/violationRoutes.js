@@ -3,6 +3,8 @@ const c = require("../controllers/violationController");
 const { protect, authorize } = require("../middleware/auth");
 router.use(protect);
 router.get("/", c.list);
+router.post("/wrong-parking", c.wrongParking);
+router.post("/:id/accept-alternative", c.acceptAlternative);
 router.post("/", c.create);
 router.patch("/:id", authorize("admin"), c.update);
 module.exports = router;
